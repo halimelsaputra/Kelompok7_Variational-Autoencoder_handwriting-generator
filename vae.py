@@ -1,159 +1,98 @@
 import tensorflow as tf
 from tensorflow.keras import layers, Model
 
-# =================================================
-
-# Variational Autoencoder (VAE) Implementation
-
-# =================================================
-
+# Layer untuk melakukan sampling dari distribusi Gaussian menggunakan reparameterization trick
 class Sampling(layers.Layer):
-"""
-Custom layer for reparameterization trick.
-Fungsi ini mengambil mean (z_mean) dan log_variance (z_log_var)
-lalu melakukan sampling:
-z = mean + std * epsilon
-supaya proses sampling tetap dapat dilakukan backpropagation.
-"""
-def call(self, inputs):
-z_mean, z_log_var = inputs
+    def call(self, inputs):
+        z_mean, z_log_var = inputs
+        batch = tf.shape(z_mean)[0]          # ukuran batch
+        dim = tf.shape(z_mean)[1]            # dimensi latent
+        epsilon = tf.keras.backend.random_normal(shape=(batch, dim))  # noise acak
+        return z_mean + tf.exp(0.5 * z_log_var) * epsilon  # rumus reparameterization trick
 
-```
-    # Sampling noise dari distribusi normal
-    epsilon = tf.random.normal(shape=tf.shape(z_mean))
-    
-    # Reparameterization trick
-    return z_mean + tf.exp(0.5 * z_log_var) * epsilon
-```
-
+# Fungsi untuk membangun arsitektur Variational Autoencoder (VAE)
 def build_vae(latent_dim=2):
-"""
-Fungsi utama untuk membangun arsitektur VAE:
-- Encoder
-- Decoder
-- Custom training loop
-"""
+    # ----------------------------
+    # ENCODER
+    # ----------------------------
+    encoder_inputs = layers.Input(shape=(28, 28, 1))  # input gambar MNIST
+    x = layers.Flatten()(encoder_inputs)               # meratakan gambar
+    x = layers.Dense(256, activation="relu")(x)       # hidden layer 1
+    x = layers.Dense(128, activation="relu")(x)       # hidden layer 2
+    z_mean = layers.Dense(latent_dim, name="z_mean")(x)        # mean distribusi latent
+    z_log_var = layers.Dense(latent_dim, name="z_log_var")(x)  # log-variance distribusi latent
+    z = Sampling()([z_mean, z_log_var])                # sampling variabel latent
 
-```
-# =================================================
-#  ENCODER
-# =================================================
-# Input gambar 28x28 grayscale (1 channel)
-encoder_inputs = layers.Input(shape=(28, 28, 1))
+    encoder = Model(encoder_inputs, [z_mean, z_log_var, z], name="encoder")
 
-# Flatten → mengubah data 2D menjadi 1D vektor
-x = layers.Flatten()(encoder_inputs)
+    # ----------------------------
+    # DECODER
+    # ----------------------------
+    latent_inputs = layers.Input(shape=(latent_dim,))
+    x = layers.Dense(128, activation="relu")(latent_inputs)      # hidden layer decoder 1
+    x = layers.Dense(256, activation="relu")(x)                  # hidden layer decoder 2
+    x = layers.Dense(28 * 28, activation="sigmoid")(x)          # output rekonstruksi (flatten)
+    decoder_outputs = layers.Reshape((28, 28, 1))(x)              # reshape kembali ke bentuk gambar
 
-# Fully connected layers untuk mengekstraksi fitur
-x = layers.Dense(256, activation="relu")(x)
-x = layers.Dense(128, activation="relu")(x)
+    decoder = Model(latent_inputs, decoder_outputs, name="decoder")
 
-# Encoder menghasilkan dua output:
-# z_mean → mean dari distribusi latent
-# z_log_var → log variance dari distribusi latent
-z_mean = layers.Dense(latent_dim, name="z_mean")(x)
-z_log_var = layers.Dense(latent_dim, name="z_log_var")(x)
+    # -----------------------------------------
+    # KELAS UTAMA VAE (untuk custom training loop)
+    # -----------------------------------------
+    class VAE(Model):
+        def __init__(self, encoder, decoder, **kwargs):
+            super(VAE, self).__init__(**kwargs)
+            self.encoder = encoder
+            self.decoder = decoder
 
-# Sampling z dari z_mean dan z_log_var
-z = Sampling()([z_mean, z_log_var])
+            # tracker untuk memonitor loss selama training
+            self.total_loss_tracker = tf.keras.metrics.Mean(name="total_loss")
+            self.reconstruction_loss_tracker = tf.keras.metrics.Mean(name="reconstruction_loss")
+            self.kl_loss_tracker = tf.keras.metrics.Mean(name="kl_loss")
 
-# Membuat model encoder
-encoder = Model(
-    encoder_inputs,
-    [z_mean, z_log_var, z],
-    name="encoder"
-)
+        # daftar metrik yang akan ditampilkan
+        @property
+        def metrics(self):
+            return [self.total_loss_tracker, self.reconstruction_loss_tracker, self.kl_loss_tracker]
 
+        # custom training step
+        def train_step(self, data):
+            with tf.GradientTape() as tape:
+                # encoding: menghasilkan z_mean, z_log_var, dan sample z
+                z_mean, z_log_var, z = self.encoder(data)
 
-# =================================================
-#  DECODER
-# =================================================
-# Input berupa vector z dari latent space
-latent_inputs = layers.Input(shape=(latent_dim,))
+                # decoding: rekonstruksi gambar
+                reconstruction = self.decoder(z)
 
-# Fully connected layers untuk mengembalikan fitur menjadi gambar
-x = layers.Dense(128, activation="relu")(latent_inputs)
-x = layers.Dense(256, activation="relu")(x)
+                # menghitung reconstruction loss
+                reconstruction_loss = tf.reduce_mean(
+                    tf.reduce_sum(
+                        tf.keras.losses.binary_crossentropy(data, reconstruction), axis=(1, 2)
+                    )
+                )
 
-# Output layer menyusun kembali menjadi ukuran 28×28
-# Sigmoid digunakan karena pixel bernilai 0–1
-x = layers.Dense(28 * 28, activation="sigmoid")(x)
+                # menghitung KL divergence loss (regularisasi latent space)
+                kl_loss = -0.5 * (1 + z_log_var - tf.square(z_mean) - tf.exp(z_log_var))
+                kl_loss = tf.reduce_mean(tf.reduce_sum(kl_loss, axis=1))
 
-# Reshape ke format gambar
-decoder_outputs = layers.Reshape((28, 28, 1))(x)
+                # total loss = reconstruction + KL divergence
+                total_loss = reconstruction_loss + kl_loss
 
-# Membuat model decoder
-decoder = Model(
-    latent_inputs,
-    decoder_outputs,
-    name="decoder"
-)
+            # menghitung dan menerapkan gradient
+            grads = tape.gradient(total_loss, self.trainable_weights)
+            self.optimizer.apply_gradients(zip(grads, self.trainable_weights))
 
+            # update nilai metrik
+            self.total_loss_tracker.update_state(total_loss)
+            self.reconstruction_loss_tracker.update_state(reconstruction_loss)
+            self.kl_loss_tracker.update_state(kl_loss)
 
-# =================================================
-#  MODEL VAE DENGAN CUSTOM TRAINING 
-# =================================================
-class VAE(Model):
-    """
-    Custom Model class agar dapat mengatur loss function sendiri:
-    - Reconstruction Loss
-    - KL Divergence Loss
-    """
-    def __init__(self, encoder, decoder, **kwargs):
-        super(VAE, self).__init__(**kwargs)
-        self.encoder = encoder
-        self.decoder = decoder
+            # mengembalikan log metrik
+            return {
+                "loss": self.total_loss_tracker.result(),
+                "reconstruction_loss": self.reconstruction_loss_tracker.result(),
+                "kl_loss": self.kl_loss_tracker.result(),
+            }
 
-    def train_step(self, data):
-        """
-        Custom training step:
-        1. Encode data → dapatkan mean & log_var
-        2. Sample latent vector z
-        3. Decode kembali menjadi gambar
-        4. Hitung total loss = Reconstruction + KL Loss
-        """
-        if isinstance(data, tuple):
-            data = data[0]
-
-        # Record gradient
-        with tf.GradientTape() as tape:
-            # Forward pass
-            z_mean, z_log_var, z = self.encoder(data)
-            reconstruction = self.decoder(z)
-
-            # ---------------------------------------------------------
-            # Reconstruction Loss
-            # ---------------------------------------------------------
-            # Mengukur seberapa mirip output dengan input
-            reconstruction_loss = tf.reduce_mean(
-                tf.keras.losses.binary_crossentropy(data, reconstruction)
-            ) * 28 * 28  # skala agar loss lebih stabil
-
-            # ---------------------------------------------------------
-            # KL Divergence Loss
-            # ---------------------------------------------------------
-            # Memaksa distribusi latent mendekati Gaussian standar
-            kl_loss = -0.5 * tf.reduce_sum(
-                1 + z_log_var - tf.square(z_mean) - tf.exp(z_log_var)
-            )
-
-            # Total Loss VAE
-            total_loss = reconstruction_loss + kl_loss
-
-        # Hitung dan terapkan gradien
-        grads = tape.gradient(total_loss, self.trainable_weights)
-        self.optimizer.apply_gradients(zip(grads, self.trainable_weights))
-
-        # Nilai yang ditampilkan saat training
-        return {
-            "loss": total_loss,
-            "reconstruction_loss": reconstruction_loss,
-            "kl_loss": kl_loss,
-        }
-
-# Instance model VAE lengkap
-vae = VAE(encoder, decoder)
-
-# Mengembalikan ketiga komponen penting
-return vae, encoder, decoder
-```
+    vae = VAE(encoder, decoder)  # membangun objek VAE
+    return vae, encoder, decoder
