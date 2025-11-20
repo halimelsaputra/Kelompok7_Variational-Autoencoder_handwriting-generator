@@ -1,3 +1,4 @@
+train
 import tensorflow as tf
 from tensorflow.keras import layers, Model
 
@@ -53,7 +54,12 @@ class VAE(Model):
 
     @property
     def metrics(self):
-        return [self.total_loss_tracker, self.recon_loss_tracker, self.kl_loss]
+        return [self.total_loss_tracker, self.recon_loss_tracker, self.kl_loss_tracker]
+
+    def call(self, inputs):
+        z_mean, z_log_var, z = self.encoder(inputs)
+        reconstruction = self.decoder(z)
+        return reconstruction
 
     def train_step(self, data):
         if isinstance(data, tuple):
@@ -75,6 +81,34 @@ class VAE(Model):
 
         grads = tape.gradient(total_loss, self.trainable_weights)
         self.optimizer.apply_gradients(zip(grads, self.trainable_weights))
+
+        self.total_loss_tracker.update_state(total_loss)
+        self.recon_loss_tracker.update_state(reconstruction_loss)
+        self.kl_loss_tracker.update_state(kl_loss)
+
+        return {
+            "loss": self.total_loss_tracker.result(),
+            "reconstruction_loss": self.recon_loss_tracker.result(),
+            "kl_loss": self.kl_loss_tracker.result(),
+        }
+
+    # --- Menambahkan test_step ---
+    def test_step(self, data):
+        if isinstance(data, tuple):
+            data = data[0]
+
+        z_mean, z_log_var, z = self.encoder(data)
+        reconstruction = self.decoder(z)
+
+        reconstruction_loss = tf.reduce_mean(
+            tf.reduce_sum(tf.keras.losses.binary_crossentropy(data, reconstruction), axis=(1, 2))
+        )
+
+        kl_loss = -0.5 * tf.reduce_mean(
+            tf.reduce_sum(1 + z_log_var - tf.square(z_mean) - tf.exp(z_log_var), axis=1)
+        )
+
+        total_loss = reconstruction_loss + kl_loss
 
         self.total_loss_tracker.update_state(total_loss)
         self.recon_loss_tracker.update_state(reconstruction_loss)
@@ -108,7 +142,7 @@ if __name__ == "__main__":
     decoder = build_decoder(latent_dim)
     vae = VAE(encoder, decoder)
 
-    # Compile
+    # Compile (Tidak perlu loss argument karena sudah dihandle test_step)
     vae.compile(optimizer=tf.keras.optimizers.Adam())
 
     print("[INFO] Start training...")
@@ -116,7 +150,7 @@ if __name__ == "__main__":
         x_train,
         epochs=30,
         batch_size=128,
-        validation_data=(x_test, None),
+        validation_data=(x_test, x_test),
     )
 
     # Save model
