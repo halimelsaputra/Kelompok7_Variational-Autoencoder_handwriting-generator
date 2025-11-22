@@ -1,6 +1,7 @@
 import streamlit as st
 import numpy as np
 from PIL import Image
+from io import BytesIO
 
 # Page config
 st.set_page_config(
@@ -586,44 +587,87 @@ with col1:
 
 # Right Column - Preview
 with col2:
+    # 1. Buka KARTU UTAMA
     st.markdown("""
-    <div class="custom-card">
+    <div class="custom-card" style="height: 100%; display: flex; flex-direction: column;">
         <div class="card-header">
             <span class="card-title">Hasil Generate</span>
         </div>
+        <div style="flex-grow: 1; display: flex; flex-direction: column; justify-content: center;">
     """, unsafe_allow_html=True)
     
-    # Preview area
+    # 2. LOGIKA TAMPILAN
     if generate_btn:
-        with st.spinner("Generating handwriting..."):
-            # TODO: Replace with actual VAE model inference
-            # For now, show success message
-            st.success(f"Jangan lupa ganti yang inii")
+        # === KONDISI A: USER SUDAH KLIK TOMBOL ===
+        with st.spinner("Sedang membayangkan angka..."):
+            try:
+                from generator_api import generate_handwriting
+                
+                # Generate gambar
+                generated_image_array = generate_handwriting(z1, z2, selected_digit)
+                
+                # Proses gambar
+                img_uint8 = (generated_image_array * 255).astype(np.uint8)
+                img_pil = Image.fromarray(img_uint8)
+                
+                # Resize agar besar
+                img_display = img_pil.resize((400, 400), resample=Image.NEAREST)
+                
+                # TAMPILKAN GAMBAR
+                st.image(img_display, use_container_width=True)
+                
+                # --- FITUR SIMPAN GAMBAR (BARU) ---
+                # Konversi gambar ke Bytes (Memori)
+                buf = BytesIO()
+                img_pil.save(buf, format="PNG")
+                byte_im = buf.getvalue()
+                
+                # Tombol Download
+                st.download_button(
+                    label="⬇️ Simpan Hasil (PNG)",
+                    data=byte_im,
+                    file_name=f"vae_angka_{selected_digit}_z1_{z1}_z2_{z2}.png",
+                    mime="image/png",
+                    use_container_width=True
+                )
+                # ----------------------------------
+
+                st.success(f"Sukses! Model membayangkan angka {selected_digit}")
+                
+            except Exception as e:
+                st.error(f"Error: {e}")
+
     else:
+        # === KONDISI B: BELUM ADA GAMBAR ===
         st.markdown("""
-        <div class="preview-container">
+        <div class="preview-container" style="min-height: 350px;">
             <div class="preview-placeholder">
-                <p class="preview-text">Generate...</p>
+                <div class="preview-icon">🎨</div>
+                <p class="preview-text">Klik "Generate Handwriting"<br>untuk melihat hasil</p>
             </div>
         </div>
         """, unsafe_allow_html=True)
     
+    # 3. Tutup KARTU UTAMA
+    st.markdown("</div></div>", unsafe_allow_html=True)
+    
     # Stats display
     st.markdown(f"""
-    <div class="stats-grid">
-        <div class="stat-box">
-            <div class="stat-value">{selected_digit}</div>
-            <div class="stat-label">Terpilih</div>
+    <div style="margin-top: 20px;">
+        <div class="stats-grid">
+            <div class="stat-box">
+                <div class="stat-value">{selected_digit}</div>
+                <div class="stat-label">Terpilih</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-value">{z1:.1f}</div>
+                <div class="stat-label">Nilai Z₁</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-value">{z2:.1f}</div>
+                <div class="stat-label">Nilai Z₂</div>
+            </div>
         </div>
-        <div class="stat-box">
-            <div class="stat-value">{z1:.1f}</div>
-            <div class="stat-label">Nilai Z₁</div>
-        </div>
-        <div class="stat-box">
-            <div class="stat-value">{z2:.1f}</div>
-            <div class="stat-label">Nilai Z₂</div>
-        </div>
-    </div>
     </div>
     """, unsafe_allow_html=True)
 
