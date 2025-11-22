@@ -1,98 +1,122 @@
-import tensorflow as tf
-from tensorflow.keras import layers, Model
+# CVAE implementation using PyTorch
 
-# Layer untuk melakukan sampling dari distribusi Gaussian menggunakan reparameterization trick
-class Sampling(layers.Layer):
-    def call(self, inputs):
-        z_mean, z_log_var = inputs
-        batch = tf.shape(z_mean)[0]          # ukuran batch
-        dim = tf.shape(z_mean)[1]            # dimensi latent
-        epsilon = tf.keras.backend.random_normal(shape=(batch, dim))  # noise acak
-        return z_mean + tf.exp(0.5 * z_log_var) * epsilon  # rumus reparameterization trick
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
-# Fungsi untuk membangun arsitektur Variational Autoencoder (VAE)
-def build_vae(latent_dim=2):
-    # ----------------------------
-    # ENCODER
-    # ----------------------------
-    encoder_inputs = layers.Input(shape=(28, 28, 1))  # input gambar MNIST
-    x = layers.Flatten()(encoder_inputs)               # meratakan gambar
-    x = layers.Dense(256, activation="relu")(x)       # hidden layer 1
-    x = layers.Dense(128, activation="relu")(x)       # hidden layer 2
-    z_mean = layers.Dense(latent_dim, name="z_mean")(x)        # mean distribusi latent
-    z_log_var = layers.Dense(latent_dim, name="z_log_var")(x)  # log-variance distribusi latent
-    z = Sampling()([z_mean, z_log_var])                # sampling variabel latent
+class CVAE(nn.Module):
+    """
+    Conditional Variational Autoencoder (CVAE)
 
-    encoder = Model(encoder_inputs, [z_mean, z_log_var, z], name="encoder")
+    - Digunakan untuk dataset seperti MNIST yang punya label kelas (0–9)
+    - Input encoder       : gambar + one-hot label
+    - Input decoder       : latent vector + one-hot label
+    - Output decoder      : rekonstruksi gambar
+    """
 
-    # ----------------------------
-    # DECODER
-    # ----------------------------
-    latent_inputs = layers.Input(shape=(latent_dim,))
-    x = layers.Dense(128, activation="relu")(latent_inputs)      # hidden layer decoder 1
-    x = layers.Dense(256, activation="relu")(x)                  # hidden layer decoder 2
-    x = layers.Dense(28 * 28, activation="sigmoid")(x)          # output rekonstruksi (flatten)
-    decoder_outputs = layers.Reshape((28, 28, 1))(x)              # reshape kembali ke bentuk gambar
+    def __init__(self, img_dim=784, n_classes=10, latent_dim=20):
+        super(CVAE, self).__init__()
 
-    decoder = Model(latent_inputs, decoder_outputs, name="decoder")
+        # ------------------------------------
+        # CHOICE OF DIMENSIONS
+        # img_dim   : 28×28 MNIST → 784
+        # n_classes : jumlah label
+        # latent_dim: dimensi representasi latent
+        # ------------------------------------
 
-    # -----------------------------------------
-    # KELAS UTAMA VAE (untuk custom training loop)
-    # -----------------------------------------
-    class VAE(Model):
-        def __init__(self, encoder, decoder, **kwargs):
-            super(VAE, self).__init__(**kwargs)
-            self.encoder = encoder
-            self.decoder = decoder
+        self.img_dim = img_dim
+        self.latent_dim = latent_dim
+        self.n_classes = n_classes
 
-            # tracker untuk memonitor loss selama training
-            self.total_loss_tracker = tf.keras.metrics.Mean(name="total_loss")
-            self.reconstruction_loss_tracker = tf.keras.metrics.Mean(name="reconstruction_loss")
-            self.kl_loss_tracker = tf.keras.metrics.Mean(name="kl_loss")
+        # Input encoder = gambar + label (one-hot)
+        encoder_input_dim = img_dim + n_classes
 
-        # daftar metrik yang akan ditampilkan
-        @property
-        def metrics(self):
-            return [self.total_loss_tracker, self.reconstruction_loss_tracker, self.kl_loss_tracker]
+        # =============== ENCODER ===============
+        self.fc1 = nn.Linear(encoder_input_dim, 512)
+        self.fc2 = nn.Linear(512, 256)
 
-        # custom training step
-        def train_step(self, data):
-            with tf.GradientTape() as tape:
-                # encoding: menghasilkan z_mean, z_log_var, dan sample z
-                z_mean, z_log_var, z = self.encoder(data)
+        # Layer untuk mean & log-variance
+        self.fc_mu     = nn.Linear(256, latent_dim)
+        self.fc_logvar = nn.Linear(256, latent_dim)
 
-                # decoding: rekonstruksi gambar
-                reconstruction = self.decoder(z)
+        # =============== DECODER ===============
+        decoder_input_dim = latent_dim + n_classes
 
-                # menghitung reconstruction loss
-                reconstruction_loss = tf.reduce_mean(
-                    tf.reduce_sum(
-                        tf.keras.losses.binary_crossentropy(data, reconstruction), axis=(1, 2)
-                    )
-                )
+        self.fc3 = nn.Linear(decoder_input_dim, 256)
+        self.fc4 = nn.Linear(256, 512)
+        self.fc5 = nn.Linear(512, img_dim)
 
-                # menghitung KL divergence loss (regularisasi latent space)
-                kl_loss = -0.5 * (1 + z_log_var - tf.square(z_mean) - tf.exp(z_log_var))
-                kl_loss = tf.reduce_mean(tf.reduce_sum(kl_loss, axis=1))
 
-                # total loss = reconstruction + KL divergence
-                total_loss = reconstruction_loss + kl_loss
+    def encode(self, x, labels):
+        """
+        Encoder:
+        - Gabungkan gambar dengan one-hot label
+        - Output: mean & log-variance dari distribusi Gaussian
+        """
+        x = torch.cat([x, labels], dim=1)      # concat kedua input
+        h = F.relu(self.fc1(x))
+        h = F.relu(self.fc2(h))
 
-            # menghitung dan menerapkan gradient
-            grads = tape.gradient(total_loss, self.trainable_weights)
-            self.optimizer.apply_gradients(zip(grads, self.trainable_weights))
+        mu     = self.fc_mu(h)
+        logvar = self.fc_logvar(h)
 
-            # update nilai metrik
-            self.total_loss_tracker.update_state(total_loss)
-            self.reconstruction_loss_tracker.update_state(reconstruction_loss)
-            self.kl_loss_tracker.update_state(kl_loss)
+        return mu, logvar
 
-            # mengembalikan log metrik
-            return {
-                "loss": self.total_loss_tracker.result(),
-                "reconstruction_loss": self.reconstruction_loss_tracker.result(),
-                "kl_loss": self.kl_loss_tracker.result(),
-            }
 
-    vae = VAE(encoder, decoder)  # membangun objek VAE
-    return vae, encoder, decoder
+    def reparameterize(self, mu, logvar):
+        """
+        Reparameterization trick:
+        z = mu + std * epsilon
+
+        Agar proses sampling dari N(mu, sigma) tetap dapat dihitung gradiennya.
+        """
+        std = torch.exp(0.5 * logvar)
+        eps = torch.randn_like(std)
+        return mu + eps * std
+
+
+    def decode(self, z, labels):
+        """
+        Decoder:
+        Input = latent vector + one-hot label
+        Output = hasil rekonstruksi gambar
+        """
+        z = torch.cat([z, labels], dim=1)
+        h = F.relu(self.fc3(z))
+        h = F.relu(self.fc4(h))
+
+        # sigmoid → output bernilai 0–1 seperti pixel
+        return torch.sigmoid(self.fc5(h))
+
+
+    def forward(self, x, labels):
+        """
+        Full CVAE forward pass:
+        1. Encode (didapat mu, logvar)
+        2. Sampling latent z
+        3. Decode z kembali menjadi gambar
+        """
+        mu, logvar = self.encode(x, labels)
+        z = self.reparameterize(mu, logvar)
+        recon = self.decode(z, labels)
+        return recon, mu, logvar
+
+
+def loss_function(recon_x, x, mu, logvar):
+    """
+    CVAE Loss = Reconstruction loss + KL Divergence
+
+    - Reconstruction: seberapa mirip output dengan input
+    - KL divergence: regularisasi agar latent space rapi
+    """
+    # BCE menghitung per-pixel binary cross entropy
+    BCE = F.binary_cross_entropy(
+        recon_x, x, reduction='sum'
+    )
+
+    # Rumus KL divergence untuk distribusi Gaussian
+    KLD = -0.5 * torch.sum(
+        1 + logvar - mu.pow(2) - logvar.exp()
+    )
+
+    return BCE + KLD
