@@ -29,4 +29,4 @@ for i, ax in enumerate(axes.flat):
 
 plt.tight_layout()
 plt.savefig('manual_test_result.png')
-print("✅ Gambar berhasil disimpan di 'manual_test_result.png'")
+print("Gambar berhasil disimpan di 'manual_test_result.png'")
