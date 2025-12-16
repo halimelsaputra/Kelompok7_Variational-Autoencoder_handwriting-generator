@@ -512,12 +512,6 @@ num_samples = 10      # Jumlah variasi yang dihasilkan
 
 ## Referensi
 
-### Paper dan Publikasi
-
-1. Kingma, D. P., & Welling, M. (2013). Auto-Encoding Variational Bayes. arXiv preprint arXiv:1312.6114.
-2. Sohn, K., Lee, H., & Yan, X. (2015). Learning Structured Output Representation using Deep Conditional Generative Models. Advances in Neural Information Processing Systems (NeurIPS).
-3. LeCun, Y., Cortes, C., & Burges, C. J. (1998). The MNIST database of handwritten digits. http://yann.lecun.com/exdb/mnist/
-
 ### Framework dan Library
 
 - TensorFlow: https://www.tensorflow.org/
