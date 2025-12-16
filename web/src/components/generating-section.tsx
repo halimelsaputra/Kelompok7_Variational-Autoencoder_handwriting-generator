@@ -82,7 +82,7 @@ export function GeneratingSection() {
       const apiBase =
         (typeof globalThis !== "undefined" && (globalThis as any)?.process?.env?.NEXT_PUBLIC_API_URL?.trim()) ||
         (typeof import.meta !== "undefined" && import.meta.env?.VITE_API_URL) ||
-        "http://localhost:8000"
+        "http://localhost:7860"
       const url = `${apiBase}/generate?latent_x=${inputs.z1}&latent_y=${inputs.z2}&digit_label=${digit}`
       console.log("[fetch] Requesting:", url)
 
@@ -114,7 +114,7 @@ export function GeneratingSection() {
       setGeneratedImage(base64Image)
     } catch (err) {
       console.error("[generate] error:", err)
-      setError(err instanceof Error ? err.message : "Failed to connect to API server. Make sure it is running on port 8000.")
+      setError(err instanceof Error ? err.message : "Failed to connect to API server. Make sure it is running on port 7860.")
     } finally {
       setIsLoading(false)
     }
