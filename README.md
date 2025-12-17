@@ -168,6 +168,14 @@ source venv/bin/activate
 python api_server.py
 ```
 
+**output yang diharapkan :**
+2025-12-17 13:43:41.836147: I tensorflow/core/util/port.cc:153] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.
+2025-12-17 13:43:46.537133: I tensorflow/core/util/port.cc:153] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.
+INFO:     Started server process [15408]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:7860 (Press CTRL+C to quit)
+
 ### Langkah 2: Menjalankan Frontend Development Server
 
 Buka terminal baru (biarkan backend tetap berjalan), kemudian:
@@ -183,6 +191,17 @@ Buka browser dan akses: `http://localhost:5173`
 
 ---
 
+**output yang diharapkan:**
+> my-v0-project@0.1.0 dev
+> vite
+
+
+  VITE v6.4.1  ready in 663 ms
+
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: use --host to expose
+  ➜  press h + enter to show help
+  
 ## Penggunaan Aplikasi
 
 ### Interface Pengguna
