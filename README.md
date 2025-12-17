@@ -165,19 +165,8 @@ source venv/bin/activate
 **Jalankan Backend Server:**
 
 ```bash
-python main.py
+python api_server.py
 ```
-
-**Output yang Diharapkan:**
-```
-[load] Model CVAE Decoder berhasil dimuat via load_weights!
-INFO:     Started server process [12345]
-INFO:     Waiting for application startup.
-INFO:     Application startup complete.
-INFO:     Uvicorn running on http://0.0.0.0:7860 (Press CTRL+C to quit)
-```
-
-Backend server sekarang berjalan di `http://localhost:7860`
 
 ### Langkah 2: Menjalankan Frontend Development Server
 
@@ -187,17 +176,6 @@ Buka terminal baru (biarkan backend tetap berjalan), kemudian:
 cd Kelompok7_Variational-Autoencoder_handwriting-generator/web
 npm run dev
 ```
-
-**Output yang Diharapkan:**
-```
-  VITE v4.x.x  ready in xxx ms
-
-  ➜  Local:   http://localhost:5173/
-  ➜  Network: use --host to expose
-  ➜  press h to show help
-```
-
-Frontend sekarang berjalan di `http://localhost:5173`
 
 ### Langkah 3: Akses Aplikasi
 
